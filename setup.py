@@ -78,7 +78,7 @@ setup(
     # https://packaging.python.org/en/latest/requirements.html
     install_requires=[
         'requests==2.23.0',
-        'PyYAML==5.1'
+        'PyYAML==5.4'
     ],
 
     # List additional groups of dependencies here (e.g. development

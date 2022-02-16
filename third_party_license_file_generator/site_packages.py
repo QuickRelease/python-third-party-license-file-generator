@@ -22,8 +22,7 @@ def _pre_exec():
 def _run_subprocess(command_line):
     if platform.system() == 'Windows':
         p = subprocess.Popen(
-            executable=sys.executable,
-            args=shlex.split(command_line),
+            args=command_line.split(),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
@@ -90,12 +89,13 @@ class LicenseError(Exception):
 
 class SitePackages(object):
     def __init__(self, requirements_path, python_path=None, skip_prefixes=None,
-                 autorun=True, use_internet=True, license_overrides=None):
+                 autorun=True, use_internet=True, license_overrides=None, do_not_skip_not_required_packages=False):
         self._requirements_path = requirements_path
         self._python_path = python_path if python_path is not None else distutils.spawn.find_executable('python3')
         self._skip_prefixes = skip_prefixes
         self._use_internet = use_internet
         self._license_overrides = license_overrides if license_overrides is not None else {}
+        self._do_not_skip_not_required_packages = do_not_skip_not_required_packages
 
         self._root_module_names = set()
         self._required_module_names = set()
@@ -223,7 +223,10 @@ class SitePackages(object):
                 continue
 
             if not thing.endswith('dist-info'):
-                continue
+                if thing.endswith('.egg') and os.path.isdir(os.path.join(path_to_thing, 'EGG-INFO')):
+                    path_to_thing = os.path.join(path_to_thing, 'EGG-INFO')
+                else:
+                	continue
 
             metadata = None
             license_file = None
@@ -232,9 +235,9 @@ class SitePackages(object):
                 if not os.path.isfile(path_to_sub_thing):
                     continue
 
-                if sub_thing == 'METADATA':
+                if sub_thing == 'METADATA' or sub_thing == 'PKG-INFO':
                     metadata = self._read_metadata(path_to_sub_thing)
-                elif 'LICENSE' in sub_thing:
+                elif 'LICENSE' in sub_thing or 'COPYING' in sub_thing:
                     license_file = self._read_license(path_to_sub_thing)
 
             if metadata is None:
@@ -259,7 +262,7 @@ class SitePackages(object):
 
     def _read_site_packages(self):
         for module_name, metadata in self._module_metadatas_by_module_name.items():
-            if module_name not in self._root_module_names and module_name not in self._required_module_names:
+            if not self._do_not_skip_not_required_packages and module_name not in self._root_module_names and module_name not in self._required_module_names:
                 # print('skipping', module_name, 'as it\'s not in the root modules or any of their requirements')
                 # print('')
                 continue
@@ -289,7 +292,7 @@ class SitePackages(object):
             overriden_license_file = None
 
             license_override = self._license_overrides.get(module_name)
-            if module_name in self._license_overrides:
+            if license_override:
                 overriden_license_name = license_override.get('license_name')
                 overriden_license_file = license_override.get('license_file')
 
@@ -331,7 +334,7 @@ class SitePackages(object):
                                     #     print('got license_file from Github repo')
 
                 if license_file is None:
-                    if github_license_file is None and self._use_internet:
+                    if home_page is not None and github_license_file is None and self._use_internet:
                         github_license_file = get_license_from_github_home_page_scrape(home_page)
 
                     license_file = github_license_file
